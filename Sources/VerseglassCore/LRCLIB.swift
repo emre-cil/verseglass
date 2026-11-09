@@ -118,6 +118,34 @@ public enum LRCLIB {
         return best.0
     }
 
+    /// Near matches the automatic picker can reject, highest score first.
+    /// The menu offers these when the best hit is wrong or missing.
+    public static func rank(
+        from records: [LyricRecord],
+        title: String,
+        artist: String,
+        duration: TimeInterval?,
+        minimumScore: Int = 3
+    ) -> [LyricRecord] {
+        let wantedTitle = TrackText.normalize(TrackText.queryTitle(title))
+        let wantedArtist = TrackText.normalize(artist)
+        var seen: Set<String> = []
+        let unique = records.filter { record in
+            let key = "\(record.id.map { String($0) } ?? "-")|\(TrackText.normalize(record.artistName))|\(TrackText.normalize(record.trackName))"
+            return seen.insert(key).inserted
+        }
+        return unique
+            .map { record -> (LyricRecord, Int) in
+                (record, score(record, title: wantedTitle, artist: wantedArtist, duration: duration))
+            }
+            .filter { $0.1 >= minimumScore && $0.0.hasSyncedLyrics && !$0.0.instrumental }
+            .sorted { lhs, rhs in
+                if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+                return durationDistance(lhs.0, duration: duration) < durationDistance(rhs.0, duration: duration)
+            }
+            .map(\.0)
+    }
+
     private static func url(path: String, title: String, artist: String, duration: TimeInterval?) -> URL? {
         var components = URLComponents()
         components.scheme = "https"

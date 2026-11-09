@@ -89,11 +89,48 @@ import Testing
     #expect(PlaybackSelector.choose(spotify: nil, system: nil) == nil)
 }
 
-@Test func appleMusicIsIgnoredAndBrowsersCountAsYouTube() {
+@Test func appleMusicIsASourceAndBrowsersCountAsYouTube() {
     #expect(SourceKind.source(bundleIdentifier: "com.spotify.client") == .spotify)
-    #expect(SourceKind.source(bundleIdentifier: "com.apple.Music") == nil)
+    #expect(SourceKind.source(bundleIdentifier: "com.apple.Music") == .appleMusic)
+    #expect(SourceKind.source(bundleIdentifier: "com.apple.iTunes") == .appleMusic)
     #expect(SourceKind.source(bundleIdentifier: "com.google.Chrome") == .youtube)
     #expect(SourceKind.source(bundleIdentifier: nil) == .youtube)
+}
+
+@Test func wordStampsAdvanceOneWordAtATime() {
+    let raw = "[00:10.00]Hel<00:10.40>lo <00:11.00>world"
+    let line = LRCParser.parse(raw)[0]
+    #expect(line.text == "Hello world")
+    #expect(line.words.map(\.text) == ["Hel", "lo ", "world"])
+    #expect(line.words.map(\.time) == [10, 10.4, 11])
+    #expect(LyricClock.sungPrefixLength(in: line, position: 10, nextTime: 12) == 0)
+    #expect(LyricClock.sungPrefixLength(in: line, position: 10.4, nextTime: 12) == 3)
+    #expect(LyricClock.sungPrefixLength(in: line, position: 11, nextTime: 12) == 6)
+    #expect(LyricClock.sungPrefixLength(in: line, position: 12, nextTime: 12) == line.text.count)
+}
+
+@Test func cardDepthLimitsHowManyLinesShow() {
+    let lines = [
+        LyricLine(time: 1, text: "a"),
+        LyricLine(time: 2, text: "b"),
+        LyricLine(time: 3, text: "c"),
+        LyricLine(time: 4, text: "d"),
+    ]
+    let only = LyricClock.cardLines(in: lines, at: 2, before: CardDepth.current.before, after: CardDepth.current.after)
+    #expect(only.map(\.text) == ["c"])
+    let nearby = LyricClock.cardLines(in: lines, at: 2, before: CardDepth.nearby.before, after: CardDepth.nearby.after)
+    #expect(nearby.map(\.text) == ["b", "c", "d"])
+}
+
+@Test func rankKeepsNearMatchesAndDropsTheWrongArtist() {
+    let records = [
+        LyricRecord(id: 1, trackName: "Song", artistName: "Someone Else", duration: 180, syncedLyrics: "[00:01.00]no"),
+        LyricRecord(id: 2, trackName: "Song", artistName: "Right Artist", duration: 190, syncedLyrics: "[00:01.00]yes"),
+        LyricRecord(id: 2, trackName: "Song", artistName: "Right Artist", duration: 190, syncedLyrics: "[00:01.00]yes"),
+        LyricRecord(id: 3, trackName: "Song Live", artistName: "Right Artist", duration: 200, syncedLyrics: "[00:01.00]live"),
+    ]
+    let ranked = LRCLIB.rank(from: records, title: "Song", artist: "Right Artist", duration: 180)
+    #expect(ranked.map(\.id) == [2, 3])
 }
 
 @Test func queryTitleDropsUploadDecorationsAndAdsAreDetected() {
@@ -145,6 +182,12 @@ import Testing
     #expect(store.offset(for: key) == -0.5)
     store.reset(key)
     #expect(store.offset(for: key) == 0)
+    let overrides = LyricOverrideStore(defaults: defaults)
+    let choice = LyricOverride(title: "Pasted", syncedLyrics: "[00:01.00]line")
+    overrides.save(choice, for: key)
+    #expect(overrides.choice(for: key) == choice)
+    overrides.clear(key)
+    #expect(overrides.choice(for: key) == nil)
     #expect(OffsetStore.format(0) == "0")
     #expect(OffsetStore.format(0.5) == "+0.5")
     #expect(OffsetStore.format(-1) == "-1.0")

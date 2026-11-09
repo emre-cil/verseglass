@@ -3,17 +3,34 @@ import Foundation
 public enum LyricSource: String, Equatable, Sendable {
     case spotify = "Spotify"
     case youtube = "YouTube"
+    case appleMusic = "Apple Music"
+}
+
+public enum CardDepth: Int, Sendable {
+    case current = 0
+    case nearby = 1
+    case context = 2
+
+    public var before: Int { self == .current ? 0 : 1 }
+
+    public var after: Int {
+        switch self {
+        case .current: 0
+        case .nearby: 1
+        case .context: 3
+        }
+    }
 }
 
 public enum SourceKind {
-    /// Apple Music is left to a later AppleScript path. Nil means "ignore".
+    /// Nil means "ignore this player".
     public static func source(bundleIdentifier: String?) -> LyricSource? {
         guard let bundleIdentifier else { return .youtube }
         switch bundleIdentifier {
         case "com.spotify.client":
             return .spotify
         case "com.apple.Music", "com.apple.iTunes":
-            return nil
+            return .appleMusic
         default:
             return .youtube
         }
@@ -140,6 +157,41 @@ public enum LyricClock {
         let estimated = min(8, max(0.9, Double(max(characterCount, 1)) * 0.085))
         guard let untilNext else { return estimated }
         return min(max(untilNext, 0.05), estimated)
+    }
+
+    /// Letters already sung. Word stamps advance word by word. A line with no
+    /// word stamps keeps an even sweep until the next line.
+    public static func sungPrefixLength(in line: LyricLine, position: TimeInterval, nextTime: TimeInterval?) -> Int {
+        if line.words.isEmpty {
+            let untilNext = nextTime.map { $0 - line.time }
+            let span = sungSpan(characterCount: line.text.count, untilNext: untilNext)
+            guard span > 0 else { return line.text.count }
+            let fraction = min(1, max(0, (position - line.time) / span))
+            return sungPrefixLength(line.text, fraction: fraction)
+        }
+        var count = 0
+        for (index, word) in line.words.enumerated() {
+            let start = word.time
+            let end: TimeInterval
+            if index + 1 < line.words.count {
+                end = max(line.words[index + 1].time, start + 0.05)
+            } else if let nextTime, nextTime > start {
+                end = nextTime
+            } else {
+                end = start + max(0.35, Double(max(word.text.count, 1)) * 0.085)
+            }
+            let characters = word.text.count
+            if position >= end - 0.000_1 {
+                count += characters
+                continue
+            }
+            if position <= start { break }
+            let span = max(0.05, end - start)
+            let fraction = min(1, (position - start) / span)
+            count += min(characters, Int((Double(characters) * fraction).rounded(.down)))
+            break
+        }
+        return min(line.text.count, count)
     }
 
     /// Extended grapheme clusters at the start of `text` that the playhead has passed.
