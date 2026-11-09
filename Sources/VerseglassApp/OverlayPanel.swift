@@ -5,8 +5,8 @@ struct CardRow {
     var text: String
     var translation: String?
     var isCurrent: Bool
-    /// Set only on the line being sung. Nil keeps the whole line one color.
-    var sungFraction: Double?
+    /// Letters already sung. Nil keeps the whole line one color.
+    var sungCount: Int?
 }
 
 @MainActor
@@ -87,10 +87,29 @@ final class OverlayPanel {
         defaults.set(Double(cardWidth), forKey: Self.widthKey)
     }
 
-    func update(rows: [CardRow], visible: Bool, playing: Bool, offsetLabel: String, canNudge: Bool) {
-        panel.ignoresMouseEvents = !visible
+    func update(
+        rows: [CardRow],
+        visible: Bool,
+        playing: Bool,
+        offsetLabel: String,
+        canNudge: Bool,
+        fontSize: CGFloat,
+        centered: Bool,
+        opacity: CGFloat
+    ) {
+        let hovering = panel.frame.contains(NSEvent.mouseLocation)
+        let interactive = visible && (dragging || hovering)
+        panel.ignoresMouseEvents = !interactive
         if visible {
-            let size = card.layout(rows: rows, width: cardWidth, offsetLabel: offsetLabel, canNudge: canNudge)
+            let size = card.layout(
+                rows: rows,
+                width: cardWidth,
+                offsetLabel: offsetLabel,
+                canNudge: canNudge,
+                fontSize: fontSize,
+                centered: centered,
+                chromeVisible: interactive
+            )
             var frame = panel.frame
             if dragging {
                 frame.size = size
@@ -120,7 +139,8 @@ final class OverlayPanel {
             }
         }
         panel.orderFrontRegardless()
-        let target: CGFloat = visible ? (playing ? 1 : 0.96) : 0
+        let strength = min(1, max(0.4, opacity))
+        let target: CGFloat = visible ? strength * (playing ? 1 : 0.96) : 0
         guard abs(panel.alphaValue - target) > 0.01 else { return }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
@@ -265,12 +285,21 @@ final class LyricCardView: NSView {
         return ceil(rect.height) + 2
     }
 
-    func layout(rows: [CardRow], width: CGFloat, offsetLabel: String, canNudge: Bool) -> NSSize {
+    func layout(
+        rows: [CardRow],
+        width: CGFloat,
+        offsetLabel: String,
+        canNudge: Bool,
+        fontSize: CGFloat,
+        centered: Bool,
+        chromeVisible: Bool
+    ) -> NSSize {
         let padX: CGFloat = 22
         let padY: CGFloat = 18
         let textWidth = max(40, width - padX * 2)
         let controlHeight: CGFloat = 32
         let controlGap: CGFloat = 14
+        let style = paragraph(centered: centered)
         while fields.count < rows.count * 2 {
             let field = NSTextField(wrappingLabelWithString: "")
             field.translatesAutoresizingMaskIntoConstraints = true
@@ -290,20 +319,27 @@ final class LyricCardView: NSView {
             let main = fields[index * 2]
             let sub = fields[index * 2 + 1]
             let isCurrent = row.isCurrent
-            let mainFont = NSFont.systemFont(ofSize: isCurrent ? 22 : 16, weight: isCurrent ? .semibold : .medium)
+            let mainFont = NSFont.systemFont(
+                ofSize: isCurrent ? fontSize : max(12, fontSize * 16 / 22),
+                weight: isCurrent ? .semibold : .medium
+            )
             main.isHidden = false
             main.font = mainFont
-            main.attributedStringValue = lyricText(row, font: mainFont)
+            main.attributedStringValue = lyricText(row, font: mainFont, style: style)
             main.preferredMaxLayoutWidth = textWidth
             var subFont: NSFont?
             if let translation = row.translation, !translation.isEmpty {
-                let font = NSFont.systemFont(ofSize: isCurrent ? 15 : 13, weight: .regular)
+                let font = NSFont.systemFont(
+                    ofSize: max(11, fontSize * (isCurrent ? 15 : 13) / 22),
+                    weight: .regular
+                )
                 subFont = font
                 sub.isHidden = false
                 sub.font = font
                 sub.attributedStringValue = NSAttributedString(string: translation, attributes: [
                     .font: font,
                     .foregroundColor: NSColor.white.withAlphaComponent(isCurrent ? 0.84 : 0.5),
+                    .paragraphStyle: style,
                 ])
                 sub.preferredMaxLayoutWidth = textWidth
             } else {
@@ -330,36 +366,45 @@ final class LyricCardView: NSView {
         for index in rows.count * 2..<fields.count {
             fields[index].isHidden = true
         }
-        let size = NSSize(width: width, height: max(136, y + controlGap + controlHeight + 14))
+        let tail: CGFloat = chromeVisible ? controlGap + controlHeight + 14 : padY
+        let size = NSSize(width: width, height: max(chromeVisible ? 136 : 72, y + tail))
         body.frame = NSRect(origin: .zero, size: size)
-        placeChrome(width: width, label: offsetLabel, canNudge: canNudge)
+        placeChrome(width: width, label: offsetLabel, canNudge: canNudge, visible: chromeVisible)
         return size
     }
 
-    private func lyricText(_ row: CardRow, font: NSFont) -> NSAttributedString {
-        guard row.isCurrent, let fraction = row.sungFraction else {
+    private func paragraph(centered: Bool) -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.alignment = centered ? .center : .left
+        return style
+    }
+
+    private func lyricText(_ row: CardRow, font: NSFont, style: NSParagraphStyle) -> NSAttributedString {
+        guard row.isCurrent, let sungCount = row.sungCount else {
             return NSAttributedString(string: row.text, attributes: [
                 .font: font,
                 .foregroundColor: NSColor.white.withAlphaComponent(row.isCurrent ? 1 : 0.72),
+                .paragraphStyle: style,
             ])
         }
         let characters = Array(row.text)
-        let sungCount = LyricClock.sungPrefixLength(row.text, fraction: fraction)
         let sung = String(characters.prefix(sungCount))
         let rest = String(characters.dropFirst(sungCount))
         let text = NSMutableAttributedString()
         text.append(NSAttributedString(string: sung, attributes: [
             .font: font,
             .foregroundColor: NSColor.white,
+            .paragraphStyle: style,
         ]))
         text.append(NSAttributedString(string: rest, attributes: [
             .font: font,
             .foregroundColor: NSColor.white.withAlphaComponent(0.4),
+            .paragraphStyle: style,
         ]))
         return text
     }
 
-    private func placeChrome(width: CGFloat, label: String, canNudge: Bool) {
+    private func placeChrome(width: CGFloat, label: String, canNudge: Bool, visible: Bool) {
         let side: CGFloat = 32
         let y: CGFloat = 14
         let inset: CGFloat = 24
@@ -371,6 +416,9 @@ final class LyricCardView: NSView {
         forwardButton.isEnabled = canNudge
         resetButton.isEnabled = canNudge
         resetButton.setTitleText(label)
+        for button in chrome {
+            button.isHidden = !visible
+        }
     }
 
     override func mouseDown(with event: NSEvent) {

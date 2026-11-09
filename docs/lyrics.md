@@ -6,10 +6,10 @@ Timed lyrics are loaded from the public [LRCLIB](https://lrclib.net) API. There 
 
 The card uses LRC timestamps:
 
-- The white line is the last stamp at or before the playhead.
-- One earlier non-blank line is shown above it, dimmed.
-- Up to three following non-blank lines are shown below it, dimmed.
+- The white line is the last stamp at or before the playhead. Letters fill across that line; word stamps such as `<00:12.50>` advance word by word.
+- The menu chooses how many neighbors show: this line, one line on either side, or one line above and three below.
 - Before the first stamp, upcoming lines fill the card and none of them is marked current.
+- **Choose lyrics** lists other timed matches. **Paste lyrics…** stores an LRC for that track on this Mac. **Use automatic match** clears that choice.
 
 A per-track offset moves every stamp by 0.5 seconds. Use **Back 0.5 s** and **Forward 0.5 s** in the menu. The offset is stored for that track on this Mac.
 

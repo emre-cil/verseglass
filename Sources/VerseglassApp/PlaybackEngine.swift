@@ -8,6 +8,10 @@ final class PlaybackEngine {
     private let nowPlaying = NowPlayingSource()
     private let lyrics: LyricsClient
     private let offsets: OffsetStore
+    private let overrides: LyricOverrideStore
+    private let preferences: CardPreferences
+    private let hotkeys = HotKeyController()
+    private let pastePanel = PasteLyricsPanel()
     private let status = StatusItemController()
     private let translator = LyricTranslator()
     private let overlay: OverlayPanel
@@ -15,11 +19,16 @@ final class PlaybackEngine {
 
     private var sample: PlaybackSample?
     private var lines: [LyricLine] = []
+    private var alternatives: [LyricRecord] = []
     private var hasSynced = false
     private var fetchSettled = true
     private var fetchFailed = false
+    private var forceFetch = false
     private var nextFetchAt = Date.distantPast
     private var trackKey = ""
+    private var manualTitle: String?
+    private var copyText: String?
+    private var copyTranslation: String?
     private var displayTitle = ""
     private var sourceLabel = "—"
     private var fetchTask: Task<Void, Never>?
@@ -32,6 +41,8 @@ final class PlaybackEngine {
             .appendingPathComponent("Verseglass/lyrics", isDirectory: true)
         lyrics = LyricsClient(cache: LyricCache(directory: support))
         offsets = OffsetStore(defaults: defaults)
+        overrides = LyricOverrideStore(defaults: defaults)
+        preferences = CardPreferences(defaults: defaults)
         overlay = OverlayPanel(defaults: defaults, translatorView: translator.view)
         if defaults.object(forKey: Self.overlayKey) == nil {
             overlayVisible = true
@@ -50,6 +61,47 @@ final class PlaybackEngine {
         status.onAdjustWidth = { [weak self] steps in
             self?.adjustWidth(steps)
         }
+        status.onAdjustFont = { [weak self] steps in
+            self?.adjustFont(steps)
+        }
+        status.onSelectDepth = { [weak self] raw in
+            guard let depth = CardDepth(rawValue: raw) else { return }
+            self?.preferences.setDepth(depth)
+            self?.tick()
+        }
+        status.onAdjustOpacity = { [weak self] steps in
+            self?.preferences.adjustOpacity(steps: steps)
+            self?.tick()
+        }
+        status.onToggleCentered = { [weak self] in
+            guard let self else { return }
+            self.preferences.setCentered(!self.preferences.centered)
+            self.tick()
+        }
+        status.onCopyLine = { [weak self] in
+            self?.copyLine()
+        }
+        status.onPickLyric = { [weak self] index in
+            self?.pickLyric(index)
+        }
+        status.onUseAutomatic = { [weak self] in
+            self?.useAutomatic()
+        }
+        status.onPasteLyrics = { [weak self] in
+            self?.beginPaste()
+        }
+        status.onToggleLogin = { [weak self] in
+            self?.toggleLogin()
+        }
+        pastePanel.onSave = { [weak self] raw in
+            self?.savePasted(raw)
+        }
+        hotkeys.onToggle = { [weak self] in
+            self?.toggleOverlay()
+        }
+        hotkeys.onNudge = { [weak self] steps in
+            self?.nudge(steps)
+        }
         overlay.onNudge = { [weak self] steps in
             self?.nudge(steps)
         }
@@ -66,6 +118,7 @@ final class PlaybackEngine {
 
     func start() {
         closeStrayWindows()
+        hotkeys.start()
         nowPlaying.start()
         Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -97,6 +150,10 @@ final class PlaybackEngine {
             fetchSettled = true
             fetchFailed = false
             translator.update(lines: [])
+            alternatives = []
+            manualTitle = nil
+            copyText = nil
+            copyTranslation = nil
             displayTitle = ""
             sourceLabel = "—"
             return
@@ -111,12 +168,21 @@ final class PlaybackEngine {
         sourceLabel = chosen.source.rawValue
         let sameTrack = chosen.trackKey == trackKey
         if sameTrack {
-            guard fetchFailed, Date() >= nextFetchAt else { return }
+            let retry = forceFetch || (fetchFailed && Date() >= nextFetchAt)
+            guard retry else { return }
+            forceFetch = false
         } else {
             trackKey = chosen.trackKey
-            lines = []
-            hasSynced = false
-            translator.update(lines: [])
+            alternatives = []
+            if let choice = overrides.choice(for: chosen.trackKey) {
+                manualTitle = choice.title
+                apply(choice.syncedLyrics)
+            } else {
+                manualTitle = nil
+                lines = []
+                hasSynced = false
+                translator.update(lines: [])
+            }
         }
         fetchSettled = false
         fetchFailed = false
@@ -127,32 +193,33 @@ final class PlaybackEngine {
         fetchTask?.cancel()
         fetchTask = Task { [weak self] in
             guard let self else { return }
-            let lookup = await self.lyrics.load(title: title, artist: artist, duration: duration)
+            let found = await self.lyrics.discover(title: title, artist: artist, duration: duration)
             guard !Task.isCancelled, key == self.trackKey else { return }
-            switch lookup {
-            case .match(let record):
-                if record.instrumental {
-                    self.lines = []
-                    self.hasSynced = false
-                } else if let synced = record.syncedLyrics {
-                    self.lines = LRCParser.parse(synced)
-                    self.hasSynced = !self.lines.isEmpty
-                } else {
-                    self.lines = []
-                    self.hasSynced = false
-                }
-                self.translator.update(lines: self.lines.map(\.text))
-                self.fetchFailed = false
-            case .miss:
-                self.lines = []
-                self.hasSynced = false
-                self.fetchFailed = false
-            case .failed:
-                self.fetchFailed = true
+            self.alternatives = found.alternatives
+            self.fetchFailed = found.failed
+            if found.failed {
                 self.nextFetchAt = Date().addingTimeInterval(5)
+            }
+            if self.overrides.choice(for: key) == nil {
+                if found.match?.instrumental == true {
+                    self.apply(nil)
+                } else {
+                    self.apply(found.match?.syncedLyrics)
+                }
             }
             self.fetchSettled = true
         }
+    }
+
+    private func apply(_ synced: String?) {
+        if let synced, !synced.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lines = LRCParser.parse(synced)
+            hasSynced = !lines.isEmpty
+        } else {
+            lines = []
+            hasSynced = false
+        }
+        translator.update(lines: lines.map(\.text))
     }
 
     private func tick() {
@@ -160,12 +227,17 @@ final class PlaybackEngine {
         let step = marqueeTick / 3
         guard let sample else {
             status.apply(idleState(), marqueeStep: step)
+            copyText = nil
+            copyTranslation = nil
             overlay.update(
-                rows: [CardRow(text: Copy.nothingPlaying, translation: nil, isCurrent: true, sungFraction: nil)],
+                rows: [CardRow(text: Copy.nothingPlaying, translation: nil, isCurrent: true, sungCount: nil)],
                 visible: overlayVisible,
                 playing: false,
                 offsetLabel: "0",
-                canNudge: false
+                canNudge: false,
+                fontSize: preferences.fontSize,
+                centered: preferences.centered,
+                opacity: preferences.opacity
             )
             return
         }
@@ -173,20 +245,32 @@ final class PlaybackEngine {
         let index = hasSynced ? LyricClock.activeIndex(in: lines, at: position) : nil
         let current = index.map { lines[$0].text } ?? ""
         let next = hasSynced ? LyricClock.nextText(in: lines, after: index) : ""
-        let card = hasSynced ? LyricClock.cardLines(in: lines, at: index) : []
-        let fraction = hasSynced ? LyricClock.sungFraction(in: lines, at: index, position: position) : 0
+        let card = hasSynced
+            ? LyricClock.cardLines(in: lines, at: index, before: preferences.depth.before, after: preferences.depth.after)
+            : []
+        let nextTime: TimeInterval? = index.flatMap { cursor in
+            cursor + 1 < lines.count ? lines[cursor + 1].time : nil
+        }
+        let sung = index.map { LyricClock.sungPrefixLength(in: lines[$0], position: position, nextTime: nextTime) }
+        if let index, hasSynced, !lines[index].text.isEmpty {
+            copyText = lines[index].text
+            copyTranslation = translator.translation(for: lines[index].text)
+        } else {
+            copyText = nil
+            copyTranslation = nil
+        }
         let rows: [CardRow]
         if card.isEmpty {
             let title = displayTitle.isEmpty ? "…" : displayTitle
             let missing = fetchSettled && !hasSynced && !displayTitle.isEmpty
-            rows = [CardRow(text: title, translation: missing ? Copy.noLyrics : nil, isCurrent: true, sungFraction: nil)]
+            rows = [CardRow(text: title, translation: missing ? Copy.noLyrics : nil, isCurrent: true, sungCount: nil)]
         } else {
             rows = card.map { line in
                 CardRow(
                     text: line.text,
                     translation: translator.translation(for: line.text),
                     isCurrent: line.isCurrent,
-                    sungFraction: line.isCurrent ? fraction : nil
+                    sungCount: line.isCurrent ? sung : nil
                 )
             }
         }
@@ -196,7 +280,10 @@ final class PlaybackEngine {
             visible: visible,
             playing: sample.isPlaying,
             offsetLabel: OffsetStore.format(offsets.offset(for: trackKey)),
-            canNudge: !trackKey.isEmpty
+            canNudge: !trackKey.isEmpty,
+            fontSize: preferences.fontSize,
+            centered: preferences.centered,
+            opacity: preferences.opacity
         )
         status.apply(menuState(current: current, next: next), marqueeStep: step)
     }
@@ -220,7 +307,21 @@ final class PlaybackEngine {
             translationLanguageName: translator.targetLanguageName,
             cardWidth: overlay.widthPoints,
             canNarrow: overlay.canNarrow,
-            canWiden: overlay.canWiden
+            canWiden: overlay.canWiden,
+            fontSize: Int(preferences.fontSize.rounded()),
+            canShrinkFont: preferences.canShrinkFont,
+            canGrowFont: preferences.canGrowFont,
+            depth: preferences.depth.rawValue,
+            opacityPercent: Int((preferences.opacity * 100).rounded()),
+            canFade: preferences.canFade,
+            canSolid: preferences.canSolid,
+            centered: preferences.centered,
+            canCopy: copyText != nil,
+            lyricChoices: choiceTitles(),
+            selectedLyric: selectedLyricIndex(),
+            usingManual: manualTitle != nil,
+            canPaste: !trackKey.isEmpty,
+            opensAtLogin: LoginItem.isEnabled
         )
     }
 
@@ -237,7 +338,21 @@ final class PlaybackEngine {
             translationLanguageName: translator.targetLanguageName,
             cardWidth: overlay.widthPoints,
             canNarrow: overlay.canNarrow,
-            canWiden: overlay.canWiden
+            canWiden: overlay.canWiden,
+            fontSize: Int(preferences.fontSize.rounded()),
+            canShrinkFont: preferences.canShrinkFont,
+            canGrowFont: preferences.canGrowFont,
+            depth: preferences.depth.rawValue,
+            opacityPercent: Int((preferences.opacity * 100).rounded()),
+            canFade: preferences.canFade,
+            canSolid: preferences.canSolid,
+            centered: preferences.centered,
+            canCopy: false,
+            lyricChoices: [],
+            selectedLyric: nil,
+            usingManual: false,
+            canPaste: false,
+            opensAtLogin: LoginItem.isEnabled
         )
     }
 
@@ -251,6 +366,92 @@ final class PlaybackEngine {
         guard !trackKey.isEmpty else { return }
         offsets.reset(trackKey)
         tick()
+    }
+
+    private func adjustFont(_ steps: Int) {
+        if steps == 0 {
+            preferences.resetFont()
+        } else {
+            preferences.adjustFont(steps: steps)
+        }
+        tick()
+    }
+
+    private func copyLine() {
+        guard let copyText else { return }
+        var text = copyText
+        if let copyTranslation, !copyTranslation.isEmpty {
+            text += "\n" + copyTranslation
+        }
+        let board = NSPasteboard.general
+        board.clearContents()
+        board.setString(text, forType: .string)
+    }
+
+    private func pickLyric(_ index: Int) {
+        guard !trackKey.isEmpty, alternatives.indices.contains(index) else { return }
+        let record = alternatives[index]
+        guard let synced = record.syncedLyrics, !synced.isEmpty else { return }
+        let title = choiceTitles()[index]
+        overrides.save(LyricOverride(title: title, syncedLyrics: synced), for: trackKey)
+        manualTitle = title
+        apply(synced)
+        fetchSettled = true
+        tick()
+    }
+
+    private func useAutomatic() {
+        guard !trackKey.isEmpty else { return }
+        overrides.clear(trackKey)
+        manualTitle = nil
+        apply(nil)
+        fetchSettled = false
+        forceFetch = true
+        Task { await poll() }
+    }
+
+    private func beginPaste() {
+        guard !trackKey.isEmpty else { return }
+        pastePanel.show(existing: overrides.choice(for: trackKey)?.syncedLyrics ?? "")
+    }
+
+    private func savePasted(_ raw: String) {
+        guard !trackKey.isEmpty else { return }
+        overrides.save(LyricOverride(title: Copy.pastedLyrics, syncedLyrics: raw), for: trackKey)
+        manualTitle = Copy.pastedLyrics
+        apply(raw)
+        fetchSettled = true
+        tick()
+    }
+
+    private func toggleLogin() {
+        do {
+            try LoginItem.setEnabled(!LoginItem.isEnabled)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = Copy.loginFailed
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+        tick()
+    }
+
+    private func choiceTitles() -> [String] {
+        alternatives.map { record in
+            let name = [record.artistName, record.trackName]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " — ")
+            if name.count > 80 {
+                return String(name.prefix(79)) + "…"
+            }
+            return name.isEmpty ? Copy.pastedLyrics : name
+        }
+    }
+
+    private func selectedLyricIndex() -> Int? {
+        guard let synced = overrides.choice(for: trackKey)?.syncedLyrics else { return nil }
+        return alternatives.firstIndex { $0.syncedLyrics == synced }
     }
 
     private func adjustWidth(_ steps: Int) {
@@ -275,7 +476,7 @@ final class PlaybackEngine {
     private static let overlayKey = "overlayVisible"
 
     private func closeStrayWindows() {
-        for window in NSApp.windows where window.identifier?.rawValue != "lyric-overlay" {
+        for window in NSApp.windows where window.identifier?.rawValue != "lyric-overlay" && window.identifier?.rawValue != "paste-lyrics" {
             window.orderOut(nil)
         }
     }

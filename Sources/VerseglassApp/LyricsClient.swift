@@ -11,49 +11,84 @@ final class LyricsClient {
         self.session = session
     }
 
-    func load(title: String, artist: String, duration: TimeInterval?) async -> LyricLookup {
+    func discover(title: String, artist: String, duration: TimeInterval?) async -> LyricDiscovery {
         let candidates = TrackText.lookupCandidates(title: title, artist: artist)
         let primary = candidates[0]
         let key = LyricCache.cacheKey(artist: primary.artist, title: primary.title, duration: duration)
-        if let entry = cache.load(key: key), let record = entry.record {
-            return .match(record)
+        let cached = cache.load(key: key)
+        if let cached, cached.record == nil {
+            return LyricDiscovery(match: nil, alternatives: [], failed: false)
         }
+        var pooled: [LyricRecord] = []
+        var poolTitle = primary.title
+        var poolArtist = primary.artist
         var failed = false
         for candidate in candidates {
-            switch await resolve(title: candidate.title, artist: candidate.artist, duration: duration) {
-            case .match(let record):
-                cache.save(key: key, record: record)
-                return .match(record)
-            case .miss:
-                continue
-            case .failed:
-                failed = true
+            let gathered = await gather(title: candidate.title, artist: candidate.artist, duration: duration)
+            if gathered.failed { failed = true }
+            let ranked = LRCLIB.rank(
+                from: gathered.records,
+                title: candidate.title,
+                artist: candidate.artist,
+                duration: duration
+            )
+            if !ranked.isEmpty {
+                pooled = ranked
+                poolTitle = candidate.title
+                poolArtist = candidate.artist
+                break
             }
         }
-        if failed { return .failed }
-        cache.save(key: key, record: nil)
-        return .miss
+        let best = LRCLIB.choose(from: pooled, title: poolTitle, artist: poolArtist, duration: duration) ?? cached?.record
+        if pooled.isEmpty, let best {
+            pooled = [best]
+        }
+        if let best {
+            cache.save(key: key, record: best)
+        } else if pooled.isEmpty, !failed {
+            cache.save(key: key, record: nil)
+        }
+        return LyricDiscovery(
+            match: best,
+            alternatives: Array(pooled.prefix(8)),
+            failed: best == nil && pooled.isEmpty && failed
+        )
     }
 
-    private func resolve(title: String, artist: String, duration: TimeInterval?) async -> LyricLookup {
-        if case .body(let data) = await fetch(LRCLIB.getURL(title: title, artist: artist, duration: duration)) {
+    private func gather(title: String, artist: String, duration: TimeInterval?) async -> (records: [LyricRecord], failed: Bool) {
+        var records: [LyricRecord] = []
+        var failed = false
+        switch await fetch(LRCLIB.getURL(title: title, artist: artist, duration: duration)) {
+        case .body(let data):
             if let record = try? LRCLIB.decodeRecord(from: data) {
-                return .match(record)
+                records.append(record)
+            } else {
+                failed = true
             }
-            return .failed
+        case .missing:
+            break
+        case .failed:
+            failed = true
         }
-        guard case .body(let data) = await fetch(LRCLIB.searchURL(title: title, artist: artist)) else {
-            return .failed
+        switch await fetch(LRCLIB.searchURL(title: title, artist: artist)) {
+        case .body(let data):
+            if let list = try? LRCLIB.decodeSearch(from: data) {
+                records.append(contentsOf: list)
+            } else {
+                failed = true
+            }
+        case .missing:
+            break
+        case .failed:
+            failed = true
         }
-        let results = (try? LRCLIB.decodeSearch(from: data)) ?? []
-        let chosen = LRCLIB.choose(from: results, title: title, artist: artist, duration: duration)
-        return chosen.map(LyricLookup.match) ?? .miss
+        return (records, failed)
     }
 
     private func fetch(_ url: URL?) async -> HTTPBody {
         guard let url else { return .failed }
         var request = URLRequest(url: url)
-        request.setValue("Verseglass/1.1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("Verseglass/1.2.0", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 8
         do {
             let (data, response) = try await session.data(for: request)
@@ -67,10 +102,10 @@ final class LyricsClient {
     }
 }
 
-enum LyricLookup: Sendable {
-    case match(LyricRecord)
-    case miss
-    case failed
+struct LyricDiscovery: Sendable {
+    var match: LyricRecord?
+    var alternatives: [LyricRecord]
+    var failed: Bool
 }
 
 private enum HTTPBody {
