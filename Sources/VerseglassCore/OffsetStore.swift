@@ -28,6 +28,12 @@ public final class OffsetStore: @unchecked Sendable {
         return value
     }
 
+    public func reset(_ trackKey: String) {
+        var stored = storedMap()
+        stored.removeValue(forKey: trackKey)
+        defaults.set(stored, forKey: storageKey)
+    }
+
     private func storedMap() -> [String: Double] {
         guard let raw = defaults.dictionary(forKey: storageKey) else { return [:] }
         var map: [String: Double] = [:]

@@ -29,11 +29,36 @@ import Testing
     #expect(LyricClock.nextText(in: lines, after: nil) == "a")
     #expect(LyricClock.nextText(in: lines, after: 1) == "c")
     #expect(LyricClock.nextText(in: lines, after: 2) == "")
+    #expect(LyricClock.sungFraction(in: lines, at: nil, position: 12) == 0)
+    #expect(LyricClock.sungPrefixLength("abc", fraction: 0) == 0)
+    #expect(LyricClock.sungPrefixLength("abc", fraction: 1) == 3)
+    #expect(LyricClock.sungPrefixLength("şarkı", fraction: 0.5) == 2)
+    #expect(LyricClock.sungPrefixLength("", fraction: 1) == 0)
     #expect(LyricClock.cardLines(in: lines, at: nil).map(\.text) == ["a", "b", "c"])
     #expect(LyricClock.cardLines(in: lines, at: nil).allSatisfy { !$0.isCurrent })
     let around = LyricClock.cardLines(in: lines, at: 1)
     #expect(around.map(\.text) == ["a", "b", "c"])
     #expect(around.map(\.isCurrent) == [false, true, false])
+}
+
+@Test func playheadCrossesTheLineThenHoldsThroughALongGap() {
+    let text = String(repeating: "a", count: 20)
+    let lines = [
+        LyricLine(time: 10, text: text),
+        LyricLine(time: 30, text: "next"),
+    ]
+    let span = LyricClock.sungSpan(characterCount: text.count, untilNext: 20)
+    #expect(abs(span - 1.7) < 0.001)
+    #expect(LyricClock.sungFraction(in: lines, at: 0, position: 10) == 0)
+    #expect(abs(LyricClock.sungFraction(in: lines, at: 0, position: 10 + span / 2) - 0.5) < 0.001)
+    #expect(LyricClock.sungFraction(in: lines, at: 0, position: 20) == 1)
+
+    let tight = [
+        LyricLine(time: 10, text: String(repeating: "b", count: 40)),
+        LyricLine(time: 12, text: "next"),
+    ]
+    #expect(LyricClock.sungSpan(characterCount: 40, untilNext: 2) == 2)
+    #expect(abs(LyricClock.sungFraction(in: tight, at: 0, position: 11) - 0.5) < 0.001)
 }
 
 @Test func clockInterpolatesWhilePlayingAndHoldsWhilePaused() {
@@ -118,6 +143,8 @@ import Testing
     #expect(store.nudge(key, steps: 1) == 1)
     #expect(store.nudge(key, steps: -3) == -0.5)
     #expect(store.offset(for: key) == -0.5)
+    store.reset(key)
+    #expect(store.offset(for: key) == 0)
     #expect(OffsetStore.format(0) == "0")
     #expect(OffsetStore.format(0.5) == "+0.5")
     #expect(OffsetStore.format(-1) == "-1.0")

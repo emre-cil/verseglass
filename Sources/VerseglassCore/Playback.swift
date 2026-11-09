@@ -124,6 +124,32 @@ public enum LyricClock {
         return lines.first?.text ?? ""
     }
 
+    /// 0...1 across the active line. The playhead moves with the lyric, then
+    /// the next timestamp starts a new line. A long gap finishes the sweep
+    /// early and holds the line, instead of crawling through an instrumental.
+    public static func sungFraction(in lines: [LyricLine], at index: Int?, position: TimeInterval) -> Double {
+        guard let index, lines.indices.contains(index) else { return 0 }
+        let start = lines[index].time
+        let untilNext = index + 1 < lines.count ? lines[index + 1].time - start : nil
+        let span = sungSpan(characterCount: lines[index].text.count, untilNext: untilNext)
+        guard span > 0 else { return 1 }
+        return min(1, max(0, (position - start) / span))
+    }
+
+    public static func sungSpan(characterCount: Int, untilNext: TimeInterval?) -> TimeInterval {
+        let estimated = min(8, max(0.9, Double(max(characterCount, 1)) * 0.085))
+        guard let untilNext else { return estimated }
+        return min(max(untilNext, 0.05), estimated)
+    }
+
+    /// Extended grapheme clusters at the start of `text` that the playhead has passed.
+    public static func sungPrefixLength(_ text: String, fraction: Double) -> Int {
+        let count = text.count
+        guard count > 0 else { return 0 }
+        let clamped = min(1, max(0, fraction))
+        return min(count, Int((Double(count) * clamped).rounded(.down)))
+    }
+
     /// One previous line, the line being sung, then the following ones.
     /// Blanks are skipped. Before the first stamp nothing is current; the
     /// upcoming lines fill the card.

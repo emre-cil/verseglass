@@ -6,6 +6,11 @@
 "Offset: %@" = "Kaydırma: %@";
 "Hide card" = "Kartı gizle";
 "Show card" = "Kartı göster";
+"Narrower" = "Daralt";
+"Wider" = "Genişlet";
+"Width: %d" = "Genişlik: %d";
+"Reset width" = "Genişliği sıfırla";
+"Reset offset" = "Kaydırma sıfırla";
 "Quit" = "Çıkış";
 "Download %@ translation" = "%@ çevirisini indir";
 "%@ s" = "%@ sn";

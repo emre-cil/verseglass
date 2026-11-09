@@ -13,10 +13,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         var canNudge: Bool
         var offerTranslationInstall: Bool
         var translationLanguageName: String
+        var cardWidth: Int
+        var canNarrow: Bool
+        var canWiden: Bool
     }
 
     var onNudge: ((Int) -> Void)?
+    var onResetOffset: (() -> Void)?
     var onToggleOverlay: (() -> Void)?
+    var onAdjustWidth: ((Int) -> Void)?
     var onInstallTranslation: (() -> Void)?
 
     private let item: NSStatusItem
@@ -30,7 +35,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         overlayVisible: true,
         canNudge: false,
         offerTranslationInstall: false,
-        translationLanguageName: ""
+        translationLanguageName: "",
+        cardWidth: 480,
+        canNarrow: true,
+        canWiden: true
     )
 
     override init() {
@@ -67,6 +75,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         forward.target = self
         forward.isEnabled = state.canNudge
         menu.addItem(disabled(String(format: Copy.offsetFormat, state.offsetText)))
+        let resetOffset = menu.addItem(withTitle: Copy.resetOffset, action: #selector(resetOffset), keyEquivalent: "")
+        resetOffset.target = self
+        resetOffset.isEnabled = state.canNudge
         if state.offerTranslationInstall {
             let install = menu.addItem(
                 withTitle: String(format: Copy.downloadFormat, state.translationLanguageName),
@@ -75,6 +86,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             )
             install.target = self
         }
+        menu.addItem(.separator())
+        let narrower = menu.addItem(withTitle: Copy.narrower, action: #selector(narrower), keyEquivalent: "")
+        narrower.target = self
+        narrower.isEnabled = state.canNarrow
+        let wider = menu.addItem(withTitle: Copy.wider, action: #selector(wider), keyEquivalent: "")
+        wider.target = self
+        wider.isEnabled = state.canWiden
+        menu.addItem(disabled(String(format: Copy.widthFormat, state.cardWidth)))
+        let resetWidth = menu.addItem(withTitle: Copy.resetWidth, action: #selector(resetWidth), keyEquivalent: "")
+        resetWidth.target = self
         menu.addItem(.separator())
         let toggleTitle = state.overlayVisible ? Copy.hide : Copy.show
         let toggle = menu.addItem(withTitle: toggleTitle, action: #selector(toggleOverlay), keyEquivalent: "")
@@ -85,6 +106,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func nudgeBack() { onNudge?(-1) }
     @objc private func nudgeForward() { onNudge?(1) }
+    @objc private func resetOffset() { onResetOffset?() }
+    @objc private func narrower() { onAdjustWidth?(-1) }
+    @objc private func wider() { onAdjustWidth?(1) }
+    @objc private func resetWidth() { onAdjustWidth?(0) }
     @objc private func toggleOverlay() { onToggleOverlay?() }
     @objc private func installTranslation() { onInstallTranslation?() }
     @objc private func quit() { NSApp.terminate(nil) }

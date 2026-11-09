@@ -41,8 +41,23 @@ final class PlaybackEngine {
         status.onNudge = { [weak self] steps in
             self?.nudge(steps)
         }
+        status.onResetOffset = { [weak self] in
+            self?.resetOffset()
+        }
         status.onToggleOverlay = { [weak self] in
             self?.toggleOverlay()
+        }
+        status.onAdjustWidth = { [weak self] steps in
+            self?.adjustWidth(steps)
+        }
+        overlay.onNudge = { [weak self] steps in
+            self?.nudge(steps)
+        }
+        overlay.onResetOffset = { [weak self] in
+            self?.resetOffset()
+        }
+        overlay.onHide = { [weak self] in
+            self?.setOverlayVisible(false)
         }
         status.onInstallTranslation = { [weak self] in
             self?.translator.requestInstall()
@@ -146,9 +161,11 @@ final class PlaybackEngine {
         guard let sample else {
             status.apply(idleState(), marqueeStep: step)
             overlay.update(
-                rows: [CardRow(text: Copy.nothingPlaying, translation: nil, isCurrent: true)],
+                rows: [CardRow(text: Copy.nothingPlaying, translation: nil, isCurrent: true, sungFraction: nil)],
                 visible: overlayVisible,
-                playing: false
+                playing: false,
+                offsetLabel: "0",
+                canNudge: false
             )
             return
         }
@@ -157,22 +174,30 @@ final class PlaybackEngine {
         let current = index.map { lines[$0].text } ?? ""
         let next = hasSynced ? LyricClock.nextText(in: lines, after: index) : ""
         let card = hasSynced ? LyricClock.cardLines(in: lines, at: index) : []
+        let fraction = hasSynced ? LyricClock.sungFraction(in: lines, at: index, position: position) : 0
         let rows: [CardRow]
         if card.isEmpty {
             let title = displayTitle.isEmpty ? "…" : displayTitle
             let missing = fetchSettled && !hasSynced && !displayTitle.isEmpty
-            rows = [CardRow(text: title, translation: missing ? Copy.noLyrics : nil, isCurrent: true)]
+            rows = [CardRow(text: title, translation: missing ? Copy.noLyrics : nil, isCurrent: true, sungFraction: nil)]
         } else {
             rows = card.map { line in
                 CardRow(
                     text: line.text,
                     translation: translator.translation(for: line.text),
-                    isCurrent: line.isCurrent
+                    isCurrent: line.isCurrent,
+                    sungFraction: line.isCurrent ? fraction : nil
                 )
             }
         }
         let visible = overlayVisible && !rows.isEmpty
-        overlay.update(rows: rows, visible: visible, playing: sample.isPlaying)
+        overlay.update(
+            rows: rows,
+            visible: visible,
+            playing: sample.isPlaying,
+            offsetLabel: OffsetStore.format(offsets.offset(for: trackKey)),
+            canNudge: !trackKey.isEmpty
+        )
         status.apply(menuState(current: current, next: next), marqueeStep: step)
     }
 
@@ -192,7 +217,10 @@ final class PlaybackEngine {
             overlayVisible: overlayVisible,
             canNudge: !trackKey.isEmpty,
             offerTranslationInstall: translator.needsInstall,
-            translationLanguageName: translator.targetLanguageName
+            translationLanguageName: translator.targetLanguageName,
+            cardWidth: overlay.widthPoints,
+            canNarrow: overlay.canNarrow,
+            canWiden: overlay.canWiden
         )
     }
 
@@ -206,7 +234,10 @@ final class PlaybackEngine {
             overlayVisible: overlayVisible,
             canNudge: false,
             offerTranslationInstall: translator.needsInstall,
-            translationLanguageName: translator.targetLanguageName
+            translationLanguageName: translator.targetLanguageName,
+            cardWidth: overlay.widthPoints,
+            canNarrow: overlay.canNarrow,
+            canWiden: overlay.canWiden
         )
     }
 
@@ -216,8 +247,27 @@ final class PlaybackEngine {
         tick()
     }
 
+    private func resetOffset() {
+        guard !trackKey.isEmpty else { return }
+        offsets.reset(trackKey)
+        tick()
+    }
+
+    private func adjustWidth(_ steps: Int) {
+        if steps == 0 {
+            overlay.resetWidth()
+        } else {
+            overlay.adjustWidth(steps: steps)
+        }
+        tick()
+    }
+
     private func toggleOverlay() {
-        overlayVisible.toggle()
+        setOverlayVisible(!overlayVisible)
+    }
+
+    private func setOverlayVisible(_ visible: Bool) {
+        overlayVisible = visible
         defaults.set(overlayVisible, forKey: Self.overlayKey)
         tick()
     }

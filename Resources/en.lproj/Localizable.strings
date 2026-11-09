@@ -6,6 +6,11 @@
 "Offset: %@" = "Offset: %@";
 "Hide card" = "Hide card";
 "Show card" = "Show card";
+"Narrower" = "Narrower";
+"Wider" = "Wider";
+"Width: %d" = "Width: %d";
+"Reset width" = "Reset width";
+"Reset offset" = "Reset offset";
 "Quit" = "Quit";
 "Download %@ translation" = "Download %@ translation";
 "%@ s" = "%@ s";
