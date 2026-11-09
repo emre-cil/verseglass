@@ -1,0 +1,32 @@
+---
+description: Commit each finished slice locally, push and relaunch only when the task is done
+alwaysApply: true
+---
+
+# Ship in slices
+
+A slice is one coherent change that builds and stands on its own. The task is the whole request.
+
+While slices remain:
+
+- Commit the finished slice on the current branch.
+- Do not push.
+- Leave unrelated dirty files unstaged. Do not commit secrets.
+
+When the whole task is finished:
+
+- Bump `CFBundleShortVersionString` and `CFBundleVersion` in `Resources/Info.plist`.
+- Set the `User-Agent` in `Sources/VerseglassApp/LyricsClient.swift` to `Verseglass/` plus that short version.
+- Commit anything still uncommitted.
+- Push the branch.
+- If the app binary changed, run `./build.sh`, quit the running Verseglass process, and open `dist/Verseglass.app`.
+
+Docs-only or rule-only tasks still get a commit and a push. Skip the version bump and the relaunch when the running app would be identical.
+
+```
+width controls work, letter sweep does not
+→ commit the width slice, keep going
+
+sweep works and the task is complete
+→ bump 1.1.0 to the next version, commit, push, replace the running app
+```
