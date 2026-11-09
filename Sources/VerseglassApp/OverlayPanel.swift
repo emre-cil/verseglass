@@ -161,10 +161,21 @@ final class LyricCardView: NSView {
         bounds.contains(point) ? self : nil
     }
 
+    /// Wrapping labels report a short intrinsic width before they have a frame,
+    /// which clipped the larger current line. Measure the string itself.
+    private static func lineSize(_ string: String, font: NSFont, width: CGFloat) -> NSSize {
+        let text = NSAttributedString(string: string, attributes: [.font: font])
+        let rect = text.boundingRect(
+            with: NSSize(width: width, height: 10_000),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        return NSSize(width: ceil(rect.width) + 4, height: ceil(rect.height) + 2)
+    }
+
     func layout(rows: [CardRow]) -> NSSize {
         let maxTextWidth: CGFloat = 460
-        let padX: CGFloat = 20
-        let padY: CGFloat = 16
+        let padX: CGFloat = 26
+        let padY: CGFloat = 20
         while fields.count < rows.count * 2 {
             let field = NSTextField(wrappingLabelWithString: "")
             field.drawsBackground = false
@@ -177,27 +188,33 @@ final class LyricCardView: NSView {
             fields.append(field)
         }
         var width: CGFloat = 300
+        var fonts: [(main: NSFont, sub: NSFont?)] = []
         for (index, row) in rows.enumerated() {
             let main = fields[index * 2]
             let sub = fields[index * 2 + 1]
             let isCurrent = row.isCurrent
+            let mainFont = NSFont.systemFont(ofSize: isCurrent ? 22 : 16, weight: isCurrent ? .semibold : .medium)
             main.isHidden = false
             main.stringValue = row.text
-            main.font = .systemFont(ofSize: isCurrent ? 22 : 16, weight: isCurrent ? .semibold : .medium)
+            main.font = mainFont
             main.textColor = NSColor.white.withAlphaComponent(isCurrent ? 1 : 0.72)
             main.preferredMaxLayoutWidth = maxTextWidth
-            width = max(width, min(maxTextWidth, main.intrinsicContentSize.width))
+            width = max(width, min(maxTextWidth, Self.lineSize(row.text, font: mainFont, width: maxTextWidth).width))
+            var subFont: NSFont?
             if let translation = row.translation, !translation.isEmpty {
+                let font = NSFont.systemFont(ofSize: isCurrent ? 15 : 13, weight: .regular)
+                subFont = font
                 sub.isHidden = false
                 sub.stringValue = translation
-                sub.font = .systemFont(ofSize: isCurrent ? 15 : 13, weight: .regular)
+                sub.font = font
                 sub.textColor = NSColor.white.withAlphaComponent(isCurrent ? 0.84 : 0.5)
                 sub.preferredMaxLayoutWidth = maxTextWidth
-                width = max(width, min(maxTextWidth, sub.intrinsicContentSize.width))
+                width = max(width, min(maxTextWidth, Self.lineSize(translation, font: font, width: maxTextWidth).width))
             } else {
                 sub.isHidden = true
                 sub.stringValue = ""
             }
+            fonts.append((mainFont, subFont))
         }
         let textWidth = width
         var y = padY
@@ -205,12 +222,12 @@ final class LyricCardView: NSView {
             let main = fields[index * 2]
             let sub = fields[index * 2 + 1]
             if index > 0 { y += 14 }
-            let mainHeight = main.intrinsicContentSize.height
+            let mainHeight = Self.lineSize(row.text, font: fonts[index].main, width: textWidth).height
             main.frame = NSRect(x: padX, y: y, width: textWidth, height: mainHeight)
             y += mainHeight
-            if let translation = row.translation, !translation.isEmpty {
+            if let translation = row.translation, !translation.isEmpty, let font = fonts[index].sub {
                 y += 2
-                let subHeight = sub.intrinsicContentSize.height
+                let subHeight = Self.lineSize(translation, font: font, width: textWidth).height
                 sub.frame = NSRect(x: padX, y: y, width: textWidth, height: subHeight)
                 y += subHeight
             }
