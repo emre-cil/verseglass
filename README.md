@@ -6,6 +6,8 @@ A menu-bar lyric card for macOS. It sits above other apps, shows the line being 
 
 Spotify and YouTube or YouTube Music playing in a browser are supported. Lyrics come from [LRCLIB](https://lrclib.net), which is free and needs no key. When the Mac already has an on-device translation language, each line can show a translation underneath.
 
+![The sung line is white. The previous line is dim above it, the next lines are dim below, and a translation sits under each line that has one.](docs/demo.png)
+
 Requires **macOS 15 or later**, on Apple Silicon or Intel. macOS 14 and earlier are not supported. No Apple Developer membership.
 
 ```bash

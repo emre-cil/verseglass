@@ -6,6 +6,8 @@ macOS için menü çubuğu söz kartı. Diğer uygulamaların üstünde durur. S
 
 Spotify ile tarayıcıdaki YouTube veya YouTube Music desteklenir. Sözler ücretsiz [LRCLIB](https://lrclib.net) kaynağından gelir, anahtar gerekmez. Mac’te cihaz içi çeviri dili yüklüyse her satırın altında çeviri görünebilir.
 
+![Söylenen satır beyaz. Önceki satır üstte soluk, sonrakiler altta soluk. Çevirisi olan satırın hemen altında çeviri durur.](../demo.png)
+
 **macOS 15** ve sonrası gerekir; Apple Silicon ve Intel. macOS 14 ve öncesi desteklenmez. Ücretli Apple Developer üyeliği gerekmez.
 
 ```bash
