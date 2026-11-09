@@ -131,7 +131,8 @@ public enum LRCLIB {
         let wantedArtist = TrackText.normalize(artist)
         var seen: Set<String> = []
         let unique = records.filter { record in
-            let key = "\(record.id.map { String($0) } ?? "-")|\(TrackText.normalize(record.artistName))|\(TrackText.normalize(record.trackName))"
+            let lyric = record.syncedLyrics ?? ""
+            let key = "\(TrackText.normalize(record.artistName))|\(TrackText.normalize(record.trackName))|\(lyric)"
             return seen.insert(key).inserted
         }
         return unique

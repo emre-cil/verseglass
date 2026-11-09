@@ -442,10 +442,21 @@ final class PlaybackEngine {
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
                 .joined(separator: " — ")
-            if name.count > 80 {
-                return String(name.prefix(79)) + "…"
+            let head = name.isEmpty ? Copy.pastedLyrics : name
+            let duration: String = {
+                guard record.duration > 0 else { return "" }
+                let total = Int(record.duration.rounded())
+                return String(format: " %d:%02d", total / 60, total % 60)
+            }()
+            let first = LRCParser.parse(record.syncedLyrics ?? "").first {
+                !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }?.text ?? ""
+            let preview = first.count > 36 ? String(first.prefix(35)) + "…" : first
+            let label = preview.isEmpty ? head + duration : head + duration + " · " + preview
+            if label.count > 96 {
+                return String(label.prefix(95)) + "…"
             }
-            return name.isEmpty ? Copy.pastedLyrics : name
+            return label
         }
     }
 
