@@ -10,14 +10,17 @@ Spotify ile tarayıcıdaki YouTube veya YouTube Music desteklenir. Sözler ücre
 
 **macOS 15** ve sonrası gerekir; Apple Silicon ve Intel. macOS 14 ve öncesi desteklenmez. Ücretli Apple Developer üyeliği gerekmez.
 
+[Verseglass-macOS.zip](https://github.com/emre-cil/verseglass/releases/latest/download/Verseglass-macOS.zip) dosyasını indir, aç, `Install.command` dosyasına çift tıkla. Uygulama `/Applications` içine kopyalanır ve açılışta başlar. Dock’ta görünmez. Menü çubuğunun sağındaki nota simgesine bak, ya da Spotlight’tan Verseglass yaz.
+
+Klonlayıp derleyerek kurmak için:
+
 ```bash
 git clone https://github.com/emre-cil/verseglass.git
 cd verseglass
-./build.sh
-open dist/Verseglass.app
+./install.sh
 ```
 
-`./build.sh` tek bir evrensel uygulama üretir ve onu ad-hoc imzalar.
+`./install.sh` tek bir evrensel uygulama derler, `/Applications` içine kopyalar ve Açılışta başlat’ı açar. `./build.sh` yalnızca `dist/Verseglass.app` ve `dist/Verseglass-macOS.zip` yazar.
 
 ## Kart
 

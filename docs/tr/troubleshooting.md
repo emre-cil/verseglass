@@ -10,6 +10,6 @@
 
 **YouTube başlıkta kalıyor.** Yardımcı ilk seferde birkaç saniye sürebilir; `/usr/bin/swift` betiği derleyebilir. Tarayıcının sistemdeki Şimdi Çalıyor uygulaması olması gerekir. Başlıkta sanatçı zaten yazılıysa kanal adı ayıklanır.
 
-**İki kart.** Menüden çık, sonra `dist/Verseglass.app` dosyasını bir kez aç. Çalışır kalan eski kopya kendi penceresini tutar.
+**İki kart.** Menüden çık, sonra `/Applications/Verseglass.app` dosyasını bir kez aç. Kurmadıysan `dist/Verseglass.app` dosyasını bir kez aç. Çalışır kalan eski kopya kendi penceresini tutar.
 
 **Intel Mac.** `./build.sh` x86_64 derlemesini bitirmelidir. `lipo -info dist/Verseglass.app/Contents/MacOS/Verseglass` hem `x86_64` hem `arm64` listelemelidir.

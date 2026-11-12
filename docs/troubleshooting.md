@@ -10,6 +10,6 @@
 
 **YouTube stays on the title.** Give the helper a few seconds the first time; `/usr/bin/swift` may compile it. The browser has to be the system Now Playing app. A channel name in the artist field is stripped when the title already contains the performer.
 
-**Two cards.** Quit from the menu, then open `dist/Verseglass.app` once. An older copy left running will keep its own window.
+**Two cards.** Quit from the menu, then open `/Applications/Verseglass.app` once. If you have not installed it, open `dist/Verseglass.app` once. An older copy left running will keep its own window.
 
 **Intel Mac.** `./build.sh` must finish the x86_64 compile. `lipo -info dist/Verseglass.app/Contents/MacOS/Verseglass` should list both `x86_64` and `arm64`.

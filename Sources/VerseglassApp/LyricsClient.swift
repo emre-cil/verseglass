@@ -88,7 +88,7 @@ final class LyricsClient {
     private func fetch(_ url: URL?) async -> HTTPBody {
         guard let url else { return .failed }
         var request = URLRequest(url: url)
-        request.setValue("Verseglass/1.2.1", forHTTPHeaderField: "User-Agent")
+        request.setValue("Verseglass/1.2.2", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 8
         do {
             let (data, response) = try await session.data(for: request)

@@ -6,10 +6,16 @@ enum LoginItem {
     }
 
     static func setEnabled(_ enabled: Bool) throws {
+        let service = SMAppService.mainApp
         if enabled {
-            try SMAppService.mainApp.register()
-        } else if SMAppService.mainApp.status == .enabled {
-            try SMAppService.mainApp.unregister()
+            switch service.status {
+            case .enabled, .requiresApproval:
+                return
+            default:
+                try service.register()
+            }
+        } else if service.status == .enabled || service.status == .requiresApproval {
+            try service.unregister()
         }
     }
 }

@@ -10,14 +10,17 @@ Spotify and YouTube or YouTube Music playing in a browser are supported. Lyrics 
 
 Requires **macOS 15 or later**, on Apple Silicon or Intel. macOS 14 and earlier are not supported. No Apple Developer membership.
 
+Download [Verseglass-macOS.zip](https://github.com/emre-cil/verseglass/releases/latest/download/Verseglass-macOS.zip), unzip it, and double-click `Install.command`. The app is copied to `/Applications` and set to open at login. It does not appear in the Dock. Look for the music-note icon on the right side of the menu bar, or open Verseglass from Spotlight.
+
+To build and install from a clone:
+
 ```bash
 git clone https://github.com/emre-cil/verseglass.git
 cd verseglass
-./build.sh
-open dist/Verseglass.app
+./install.sh
 ```
 
-`./build.sh` produces one universal app and ad-hoc signs it.
+`./install.sh` builds one universal app, copies it to `/Applications`, and turns on Open at login. `./build.sh` only writes `dist/Verseglass.app` and `dist/Verseglass-macOS.zip`.
 
 ## Card
 

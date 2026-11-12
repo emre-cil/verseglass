@@ -39,4 +39,20 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp -R Resources/en.lproj Resources/tr.lproj "$APP/Contents/Resources/"
 cp Sources/VerseglassApp/Resources/now_playing_helper.swift "$APP/Contents/Resources/now_playing_helper.swift"
 codesign --force --deep --sign - "$APP"
+
+STAGE="dist/Verseglass-macOS"
+rm -rf "$STAGE" dist/Verseglass-macOS.zip
+mkdir -p "$STAGE"
+COPYFILE_DISABLE=1 ditto "$APP" "$STAGE/Verseglass.app"
+cp install.sh "$STAGE/Install.command"
+chmod +x "$STAGE/Install.command"
+xattr -cr "$STAGE" || true
+find "$STAGE" -name '._*' -delete
+dot_clean -m "$STAGE"
+(
+  cd dist
+  COPYFILE_DISABLE=1 zip -r -X Verseglass-macOS.zip Verseglass-macOS
+)
+rm -rf "$STAGE"
 echo "built $APP"
+echo "built dist/Verseglass-macOS.zip"
